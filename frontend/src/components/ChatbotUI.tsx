@@ -6,6 +6,7 @@ import { Message } from '@/lib/types';
 import { SparklesIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import ReactMarkdown from 'react-markdown'; // Import ReactMarkdown
 import remarkGfm from 'remark-gfm'; // Import remarkGfm
+import Image from 'next/image'; // Import Image component for displaying plots
 
 const ChatbotUI = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -46,7 +47,18 @@ const ChatbotUI = () => {
       }
 
       const data = await response.json();
-      const botMessage: Message = { id: Date.now().toString(), text: data.response, sender: "bot" };
+      
+      let botMessage: Message;
+      if (data.response_type === "plot") {
+        botMessage = {
+          id: Date.now().toString(),
+          sender: "bot",
+          plotPath: `http://localhost:8000${data.data.path}`,
+          plotDescription: data.data.description,
+        };
+      } else {
+        botMessage = { id: Date.now().toString(), text: data.data, sender: "bot" };
+      }
       setMessages((prevMessages) => [...prevMessages, botMessage]);
     } catch (error) {
       console.error("Error sending message:", error);
@@ -78,11 +90,26 @@ const ChatbotUI = () => {
                     : "bg-gray-700 text-gray-100 rounded-bl-none"}`}
               >
                 {message.sender === "bot" ? (
-                  <div className="prose prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {message.text}
-                    </ReactMarkdown>
-                  </div>
+                  message.plotPath ? (
+                    <div className="flex flex-col items-center p-2">
+                      <Image 
+                        src={message.plotPath}
+                        alt={message.plotDescription || "Financial Plot"}
+                        width={400}
+                        height={300}
+                        className="rounded-lg shadow-md mb-2"
+                      />
+                      {message.plotDescription && (
+                        <p className="text-sm text-gray-300">{message.plotDescription}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="prose prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.text}
+                      </ReactMarkdown>
+                    </div>
+                  )
                 ) : (
                   message.text
                 )}

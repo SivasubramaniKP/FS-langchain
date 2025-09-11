@@ -11,7 +11,7 @@ or create a .env file with GOOGLE_API_KEY=your-api-key
 """
 
 import os
-import json
+import json # Import json for structured responses
 import pandas as pd
 from datetime import datetime, timedelta
 import random
@@ -22,13 +22,14 @@ from io import StringIO
 import math
 import matplotlib.pyplot as plt
 import os.path
+from rag_utils import retrieve_documents # Import RAG utilities
 
 # Set up environment
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+# try:
+#     from dotenv import load_dotenv
+#     load_dotenv()
+# except ImportError:
+#     pass
 
 # LangChain imports
 from langchain.tools import tool
@@ -762,7 +763,7 @@ def plot_monthly_credit_card_expenses() -> str:
     filename = f"plots/credit_card_expenses_{now.strftime('%Y%m%d_%H%M%S')}.png"
     plt.savefig(filename)
     plt.close()
-    return f"Credit card expenses plot saved to: {filename}"
+    return json.dumps({"type": "plot", "path": f"/{filename}", "description": "Monthly Credit Card Expenses"})
 
 @tool
 def plot_net_worth_over_time() -> str:
@@ -783,7 +784,7 @@ def plot_net_worth_over_time() -> str:
     filename = f"plots/net_worth_over_time_{now.strftime('%Y%m%d_%H%M%S')}.png"
     plt.savefig(filename)
     plt.close()
-    return f"Net worth over time plot saved to: {filename}"
+    return json.dumps({"type": "plot", "path": f"/{filename}", "description": "Net Worth Over Time"})
 
 @tool
 def plot_monthly_spending_by_category() -> str:
@@ -809,7 +810,7 @@ def plot_monthly_spending_by_category() -> str:
     filename = f"plots/monthly_spending_by_category_{now.strftime('%Y%m%d_%H%M%S')}.png"
     plt.savefig(filename)
     plt.close()
-    return f"Monthly spending by category plot saved to: {filename}"
+    return json.dumps({"type": "plot", "path": f"/{filename}", "description": "Monthly Spending by Category"})
 
 @tool
 def plot_loan_outstanding_over_time() -> str:
@@ -831,7 +832,7 @@ def plot_loan_outstanding_over_time() -> str:
     filename = f"plots/loan_outstanding_over_time_{now.strftime('%Y%m%d_%H%M%S')}.png"
     plt.savefig(filename)
     plt.close()
-    return f"Loan outstanding over time plot saved to: {filename}"
+    return json.dumps({"type": "plot", "path": f"/{filename}", "description": "Loan Outstanding Over Time"})
 
 @tool
 def plot_sip_investment_growth() -> str:
@@ -861,7 +862,7 @@ def plot_sip_investment_growth() -> str:
         plt.savefig(filename)
         plt.close()
         print(f"[DEBUG] SIP plot saved to: {filename}")
-        return f"SIP investment growth plot saved to: {filename}"
+        return json.dumps({"type": "plot", "path": f"/{filename}", "description": "SIP Investment Growth"})
     except Exception as e:
         print(f"[ERROR] Failed to save SIP plot: {e}")
         raise
@@ -891,14 +892,32 @@ def plot_deposit_growth() -> str:
     filename = f"plots/deposit_growth_{now.strftime('%Y%m%d_%H%M%S')}.png"
     plt.savefig(filename)
     plt.close()
-    return f"Deposit growth plot saved to: {filename}"
+    return json.dumps({"type": "plot", "path": f"/{filename}", "description": "Deposit Growth"})
+
+@tool
+def retrieve_document_context(query: str) -> str:
+    """
+    Retrieves relevant document chunks from the vector database based on the user's query.
+    Use this tool when the user asks a question that might be answerable by their uploaded financial documents.
+    The output will be a string containing the relevant document content.
+    """
+    docs = retrieve_documents(query)
+    if not docs:
+        return "No relevant documents found in the knowledge base."
+    return "\n---\n".join([doc.page_content for doc in docs])
 
 # Initialize Gemini model
 def initialize_gemini_model():
     """Initialize Gemini model with proper configuration."""
     # Make sure to set your Google API key
     os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
+
     
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not google_api_key:
+        print("ERROR: GOOGLE_API_KEY environment variable not set.")
+        return None
+
     try:
         model = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash-exp",
@@ -906,6 +925,7 @@ def initialize_gemini_model():
             max_tokens=4096,
             timeout=30,
             max_retries=2,
+            google_api_key=google_api_key # Explicitly pass the API key
         )
         return model
     except Exception as e:
@@ -936,7 +956,8 @@ def create_financial_agent():
         plot_monthly_spending_by_category,
         plot_loan_outstanding_over_time,
         plot_sip_investment_growth,
-        plot_deposit_growth
+        plot_deposit_growth,
+        retrieve_document_context # Add the new RAG tool
     ]
     
     # Create system prompt template
@@ -950,6 +971,7 @@ def create_financial_agent():
     - Monitoring SIP and investment performance
     - Providing retirement planning guidance
     - Generating detailed financial reports
+    - Retrieving information from user-uploaded financial documents for personalized advice.
     
     User Profile:
     - Name: {analyzer.data_generator.user_profile['name']}
@@ -962,6 +984,8 @@ def create_financial_agent():
     Be conversational, empathetic, and encouraging while maintaining professional accuracy.
     Use Indian currency (₹) and financial context throughout your responses.
     
+    **IMPORTANT:** If a user's query appears to be related to their personal financial documents (e.g., asking about specific transactions, account balances from an uploaded statement, details from a loan document), you MUST use the `retrieve_document_context` tool first to get relevant information before answering. Prioritize information from uploaded documents over your general knowledge or mock data when relevant.
+    
     You have access to the following tools to analyze the user's financial data:
     - get_net_worth_summary: Get comprehensive net worth analysis
     - calculate_loan_affordability: Check if user can afford specific loan amounts
@@ -970,6 +994,7 @@ def create_financial_agent():
     - simulate_retirement_planning: Plan for retirement goals
     - get_monthly_spending_analysis: Analyze spending patterns
     - generate_financial_report: Create comprehensive financial reports
+    - retrieve_document_context: Retrieve information from user-uploaded financial documents.
     
     Use these tools whenever the user asks questions related to their finances.
     """
